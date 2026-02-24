@@ -2,6 +2,7 @@ package grimoirecompiler.crying_portals;
 
 import net.fabricmc.api.ModInitializer;
 
+import net.minecraft.world.level.block.FireBlock;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -18,7 +19,6 @@ public class CryingPortals implements ModInitializer {
 		// This code runs as soon as Minecraft is in a mod-load-ready state.
 		// However, some things (like resources) may still be uninitialized.
 		// Proceed with mild caution.
-
 		LOGGER.info("Hello Fabric world!");
 	}
 }
