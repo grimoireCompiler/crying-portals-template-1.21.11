@@ -24,7 +24,7 @@ public class BaseFireBlockMixin {
             cancellable = true
     )
     private void crying_portals$onPlace(BlockState blockState, Level level, BlockPos blockPos, BlockState blockState2, boolean bl, CallbackInfo info) {
-        CryingPortals.LOGGER.info("ON FIRE !");
+
         if (!blockState2.is(blockState.getBlock())) {
             Optional<CryingPortalShape> optional = CryingPortalShape.findEmptyPortalShape(level, blockPos, Direction.Axis.X);
             if (optional.isPresent()) {

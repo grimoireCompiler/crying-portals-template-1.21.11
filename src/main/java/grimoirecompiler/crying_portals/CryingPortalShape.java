@@ -4,6 +4,7 @@
 //
 package grimoirecompiler.crying_portals;
 
+import java.util.HexFormat;
 import java.util.Optional;
 import java.util.function.Predicate;
 import net.minecraft.core.BlockPos;
@@ -51,7 +52,101 @@ public class CryingPortalShape{
         this.height = k;
     }
 
+    private CryingPortalShape(BlockGetter blockGetter, Direction.Axis axis, int i, Direction direction, BlockPos blockPos, int j, int k) {
+        this.axis             = axis;
+        this.numPortalBlocks  = i;
+        this.rightDir         = direction;
+        this.bottomLeft       = blockPos;
+        this.width            = j;
+        this.height           = k;
+
+        /*
+            Makes a bit sequence out of the sequence of Crying Obsidians (1) vs Obsidians(0)
+            To handle axis reflections it assumes the Higher Order sequence as the right portal sequence
+         */
+        boolean[] baseSequence  = new boolean[width];
+        boolean[] topSequence   = new boolean[width];
+        boolean[] frontSequence = new boolean[height];
+        boolean[] backSequence  = new boolean[height];
+
+        for(j=0, blockPos = blockPos.below(); j<width; j++, blockPos = blockPos.relative(direction)){
+            baseSequence[j] = blockGetter.getBlockState(blockPos).is(Blocks.CRYING_OBSIDIAN);
+            topSequence[j]  = blockGetter.getBlockState(blockPos.relative(Direction.UP, height+1)).is(Blocks.CRYING_OBSIDIAN);
+        }
+
+        blockPos = bottomLeft.relative(direction,-1);
+        for(k=0; k<height; k++, blockPos = blockPos.relative(Direction.UP)){
+            backSequence[k]   = blockGetter.getBlockState(blockPos).is(Blocks.CRYING_OBSIDIAN);
+            frontSequence[k]  = blockGetter.getBlockState(blockPos.relative(direction, width+1)).is(Blocks.CRYING_OBSIDIAN);
+        }
+
+        Boolean mirrored = null;
+        Optional<Boolean> inOrder = isHighOrder(baseSequence);
+        if (inOrder.isEmpty()) {
+            for(int x=0; x<frontSequence.length; x++){
+                if(frontSequence[x] != backSequence[x]){
+                    mirrored = Boolean.valueOf(frontSequence[x]);
+                    break;
+                }
+            }
+            if (mirrored == null){
+                inOrder = isHighOrder(topSequence);
+                mirrored = inOrder.isPresent() && !inOrder.get();
+            }
+        } else
+            mirrored = inOrder.get();
+
+        boolean fullSequence[] = new boolean[2*(height*width)];
+        if(mirrored){
+            invert(baseSequence);
+            invert(frontSequence);
+            System.arraycopy(baseSequence , 0, fullSequence, 0, width);
+            System.arraycopy(backSequence , 0, fullSequence, width, height);
+            System.arraycopy(topSequence  , 0, fullSequence, width + height, width);
+            System.arraycopy(frontSequence, 0, fullSequence, 2*width + height, height);
+        }else{
+            invert(topSequence);
+            invert(backSequence);
+            System.arraycopy(baseSequence , 0, fullSequence, 0, width);
+            System.arraycopy(frontSequence, 0, fullSequence, width, height);
+            System.arraycopy(topSequence  , 0, fullSequence, width + height, width);
+            System.arraycopy(backSequence , 0, fullSequence, 2*width + height, height);
+        }
+
+        byte[] byteArray = booleansToBytes(fullSequence);
+
+        String hexString = HexFormat.of().formatHex(byteArray);
+        CryingPortals.LOGGER.info("Portal HEX: {}", hexString);
+    }
+
+    public static void invert(boolean array[]){
+        boolean temp;
+        for(int i=0, j=array.length-1; i<array.length/2; i++, j--) {
+            temp = array[i];
+            array[i] = array[j];
+            array[j] = temp;
+        }
+    }
+
+    public static Optional<Boolean> isHighOrder(boolean code[]){
+        for(int i=0; i<code.length/2; i++)
+            if (code[i] != code[code.length-1-i])
+                return Optional.of(Boolean.valueOf(code[i]));
+        return Optional.empty();
+    }
+
+    public static byte[] booleansToBytes(boolean[] booleans) {
+        byte[] bytes = new byte[(int) Math.ceil(booleans.length / 8.0)];
+        for (int i = 0; i < booleans.length; i++) {
+            if (booleans[i]) {
+                bytes[i / 8] |= (1 << (i % 8));
+            }
+        }
+        return bytes;
+    }
+
     public static Optional<CryingPortalShape> findEmptyPortalShape(LevelAccessor levelAccessor, BlockPos blockPos, Direction.Axis axis) {
+        CryingPortals.LOGGER.info("Checking Crying Portal");
         return findPortalShape(levelAccessor, blockPos, (portalShape) -> portalShape.isValid() && portalShape.numPortalBlocks == 0, axis);
     }
 
@@ -77,7 +172,7 @@ public class CryingPortalShape{
             } else {
                 MutableInt mutableInt = new MutableInt();
                 int j = calculateHeight(blockGetter, blockPos2, direction, i, mutableInt);
-                return new CryingPortalShape(axis, mutableInt.intValue(), direction, blockPos2, i, j);
+                return new CryingPortalShape(blockGetter, axis, mutableInt.intValue(), direction, blockPos2, i, j);
             }
         }
     }
