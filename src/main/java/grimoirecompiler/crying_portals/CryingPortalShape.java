@@ -267,7 +267,7 @@ public class CryingPortalShape{
     }
 
     public void createPortalBlocks(LevelAccessor levelAccessor) {
-        BlockState blockState = (BlockState)Blocks.NETHER_PORTAL.defaultBlockState().setValue(NetherPortalBlock.AXIS, this.axis);
+        BlockState blockState = (BlockState) ModBlocks.CRYING_PORTAL.defaultBlockState().setValue(NetherPortalBlock.AXIS, this.axis);
         BlockPos.betweenClosed(this.bottomLeft, this.bottomLeft.relative(Direction.UP, this.height - 1).relative(this.rightDir, this.width - 1)).forEach((blockPos) -> levelAccessor.setBlock(blockPos, blockState, 18));
     }
 

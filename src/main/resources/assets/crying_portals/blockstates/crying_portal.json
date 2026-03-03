@@ -1,0 +1,10 @@
+{
+  "variants": {
+    "axis=x": {
+      "model": "crying_portals:block/crying_portal_ns"
+    },
+    "axis=z": {
+      "model": "crying_portals:block/crying_portal_ew"
+    }
+  }
+}

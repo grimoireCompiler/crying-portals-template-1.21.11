@@ -12,7 +12,7 @@
 		"sources": "https://github.com/FabricMC/fabric-example-mod"
 	},
 	"license": "CC0-1.0",
-	"icon": "assets/crying-portals/icon.png",
+	"icon": "assets/crying_portals/icon.png",
 	"environment": "*",
 	"entrypoints": {
 		"main": [
@@ -23,9 +23,9 @@
 		]
 	},
 	"mixins": [
-		"crying-portals.mixins.json",
+		"crying_portals.mixins.json",
 		{
-			"config": "crying-portals.client.mixins.json",
+			"config": "crying_portals.client.mixins.json",
 			"environment": "client"
 		}
 	],

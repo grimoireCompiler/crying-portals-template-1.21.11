@@ -2,12 +2,11 @@ package grimoirecompiler.crying_portals;
 
 import net.fabricmc.api.ModInitializer;
 
-import net.minecraft.world.level.block.FireBlock;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 public class CryingPortals implements ModInitializer {
-	public static final String MOD_ID = "crying-portals";
+	public static final String MOD_ID = "crying_portals";
 
 	// This logger is used to write text to the console and the log file.
 	// It is considered best practice to use your mod id as the logger's name.
@@ -20,5 +19,6 @@ public class CryingPortals implements ModInitializer {
 		// However, some things (like resources) may still be uninitialized.
 		// Proceed with mild caution.
 		LOGGER.info("Hello Fabric world!");
+		ModBlocks.initialize();
 	}
 }
