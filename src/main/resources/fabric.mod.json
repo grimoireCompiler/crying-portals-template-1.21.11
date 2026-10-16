@@ -1,15 +1,14 @@
 {
 	"schemaVersion": 1,
-	"id": "crying-portals",
+	"id": "crying_portals",
 	"version": "${version}",
 	"name": "Crying Portals",
-	"description": "This is an example description! Tell everyone what your mod is about!",
+	"description": "Nether-style portals with Crying Obsidian in their frame. Portals whose frames share the same Crying Obsidian pattern are linked, across any dimension.",
 	"authors": [
-		"Me!"
+		"grimoireCompiler"
 	],
 	"contact": {
-		"homepage": "https://fabricmc.net/",
-		"sources": "https://github.com/FabricMC/fabric-example-mod"
+		"sources": "https://github.com/grimoireCompiler/crying-portals-template-1.21.11"
 	},
 	"license": "CC0-1.0",
 	"icon": "assets/crying_portals/icon.png",

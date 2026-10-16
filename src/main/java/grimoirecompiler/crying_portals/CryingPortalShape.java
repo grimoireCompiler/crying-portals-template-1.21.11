@@ -1,10 +1,5 @@
-//
-// Source code recreated from a .class file by IntelliJ IDEA
-// (powered by Fernflower decompiler)
-//
 package grimoirecompiler.crying_portals;
 
-import java.util.HexFormat;
 import java.util.Optional;
 import java.util.function.Predicate;
 import net.minecraft.core.BlockPos;
@@ -13,141 +8,85 @@ import net.minecraft.core.Direction.Axis;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.tags.BlockTags;
 import net.minecraft.util.BlockUtil;
-import net.minecraft.util.Mth;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.EntityDimensions;
+import net.minecraft.world.entity.Relative;
 import net.minecraft.world.level.BlockGetter;
 import net.minecraft.world.level.LevelAccessor;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.NetherPortalBlock;
 import net.minecraft.world.level.block.state.BlockBehaviour;
 import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.level.block.state.properties.BlockStateProperties;
 import net.minecraft.world.level.portal.PortalShape;
-import net.minecraft.world.phys.AABB;
+import net.minecraft.world.level.portal.TeleportTransition;
 import net.minecraft.world.phys.Vec3;
-import net.minecraft.world.phys.shapes.Shapes;
-import net.minecraft.world.phys.shapes.VoxelShape;
 import org.apache.commons.lang3.mutable.MutableInt;
 import org.jspecify.annotations.Nullable;
 
-public class CryingPortalShape{
+/**
+ * Adapted from vanilla {@link PortalShape}: the frame accepts Obsidian and Crying Obsidian,
+ * and the shape carries the frame's {@link PortalSignature}.
+ */
+public class CryingPortalShape {
     private static final int MIN_WIDTH = 2;
     private static final int MIN_HEIGHT = 3;
     private static final BlockBehaviour.StatePredicate FRAME = (blockState, blockGetter, blockPos) -> blockState.is(Blocks.OBSIDIAN) || blockState.is(Blocks.CRYING_OBSIDIAN);
-    private static final float SAFE_TRAVEL_MAX_ENTITY_XY = 4.0F;
-    private static final double SAFE_TRAVEL_MAX_VERTICAL_DELTA = (double)1.0F;
     private final Direction.Axis axis;
     private final Direction rightDir;
     private final int numPortalBlocks;
     private final BlockPos bottomLeft;
     private final int height;
     private final int width;
+    private final @Nullable String signature;
+    private final boolean crying;
 
-    private CryingPortalShape(Direction.Axis axis, int i, Direction direction, BlockPos blockPos, int j, int k) {
+    private CryingPortalShape(Direction.Axis axis, int numPortalBlocks, Direction rightDir, BlockPos bottomLeft, int width, int height) {
         this.axis = axis;
-        this.numPortalBlocks = i;
-        this.rightDir = direction;
-        this.bottomLeft = blockPos;
-        this.width = j;
-        this.height = k;
+        this.numPortalBlocks = numPortalBlocks;
+        this.rightDir = rightDir;
+        this.bottomLeft = bottomLeft;
+        this.width = width;
+        this.height = height;
+        this.signature = null;
+        this.crying = false;
     }
 
-    private CryingPortalShape(BlockGetter blockGetter, Direction.Axis axis, int i, Direction direction, BlockPos blockPos, int j, int k) {
-        this.axis             = axis;
-        this.numPortalBlocks  = i;
-        this.rightDir         = direction;
-        this.bottomLeft       = blockPos;
-        this.width            = j;
-        this.height           = k;
+    private CryingPortalShape(BlockGetter blockGetter, Direction.Axis axis, int numPortalBlocks, Direction rightDir, BlockPos bottomLeft, int width, int height) {
+        this.axis            = axis;
+        this.numPortalBlocks = numPortalBlocks;
+        this.rightDir        = rightDir;
+        this.bottomLeft      = bottomLeft;
+        this.width           = width;
+        this.height          = height;
 
         /*
-            Makes a bit sequence out of the sequence of Crying Obsidians (1) vs Obsidians(0)
-            To handle axis reflections it assumes the Higher Order sequence as the right portal sequence
+            Reads which frame blocks (corners excluded) are Crying Obsidian (true) or Obsidian (false).
+            Base and top are read left to right, the side columns bottom to top.
          */
         boolean[] baseSequence  = new boolean[width];
         boolean[] topSequence   = new boolean[width];
-        boolean[] frontSequence = new boolean[height];
-        boolean[] backSequence  = new boolean[height];
+        boolean[] leftSequence  = new boolean[height];
+        boolean[] rightSequence = new boolean[height];
 
-        for(j=0, blockPos = blockPos.below(); j<width; j++, blockPos = blockPos.relative(direction)){
-            baseSequence[j] = blockGetter.getBlockState(blockPos).is(Blocks.CRYING_OBSIDIAN);
-            topSequence[j]  = blockGetter.getBlockState(blockPos.relative(Direction.UP, height+1)).is(Blocks.CRYING_OBSIDIAN);
+        BlockPos blockPos = bottomLeft.below();
+        for (int x = 0; x < width; x++, blockPos = blockPos.relative(rightDir)) {
+            baseSequence[x] = blockGetter.getBlockState(blockPos).is(Blocks.CRYING_OBSIDIAN);
+            topSequence[x]  = blockGetter.getBlockState(blockPos.relative(Direction.UP, height + 1)).is(Blocks.CRYING_OBSIDIAN);
         }
 
-        blockPos = bottomLeft.relative(direction,-1);
-        for(k=0; k<height; k++, blockPos = blockPos.relative(Direction.UP)){
-            backSequence[k]   = blockGetter.getBlockState(blockPos).is(Blocks.CRYING_OBSIDIAN);
-            frontSequence[k]  = blockGetter.getBlockState(blockPos.relative(direction, width+1)).is(Blocks.CRYING_OBSIDIAN);
+        blockPos = bottomLeft.relative(rightDir, -1);
+        for (int y = 0; y < height; y++, blockPos = blockPos.relative(Direction.UP)) {
+            leftSequence[y]  = blockGetter.getBlockState(blockPos).is(Blocks.CRYING_OBSIDIAN);
+            rightSequence[y] = blockGetter.getBlockState(blockPos.relative(rightDir, width + 1)).is(Blocks.CRYING_OBSIDIAN);
         }
 
-        Boolean mirrored = null;
-        Optional<Boolean> inOrder = isHighOrder(baseSequence);
-        if (inOrder.isEmpty()) {
-            for(int x=0; x<frontSequence.length; x++){
-                if(frontSequence[x] != backSequence[x]){
-                    mirrored = Boolean.valueOf(frontSequence[x]);
-                    break;
-                }
-            }
-            if (mirrored == null){
-                inOrder = isHighOrder(topSequence);
-                mirrored = inOrder.isPresent() && !inOrder.get();
-            }
-        } else
-            mirrored = inOrder.get();
-
-        boolean fullSequence[] = new boolean[2*(height*width)];
-        if(mirrored){
-            invert(baseSequence);
-            invert(frontSequence);
-            System.arraycopy(baseSequence , 0, fullSequence, 0, width);
-            System.arraycopy(backSequence , 0, fullSequence, width, height);
-            System.arraycopy(topSequence  , 0, fullSequence, width + height, width);
-            System.arraycopy(frontSequence, 0, fullSequence, 2*width + height, height);
-        }else{
-            invert(topSequence);
-            invert(backSequence);
-            System.arraycopy(baseSequence , 0, fullSequence, 0, width);
-            System.arraycopy(frontSequence, 0, fullSequence, width, height);
-            System.arraycopy(topSequence  , 0, fullSequence, width + height, width);
-            System.arraycopy(backSequence , 0, fullSequence, 2*width + height, height);
-        }
-
-        byte[] byteArray = booleansToBytes(fullSequence);
-
-        String hexString = HexFormat.of().formatHex(byteArray);
-        CryingPortals.LOGGER.info("Portal HEX: {}", hexString);
-    }
-
-    public static void invert(boolean array[]){
-        boolean temp;
-        for(int i=0, j=array.length-1; i<array.length/2; i++, j--) {
-            temp = array[i];
-            array[i] = array[j];
-            array[j] = temp;
-        }
-    }
-
-    public static Optional<Boolean> isHighOrder(boolean code[]){
-        for(int i=0; i<code.length/2; i++)
-            if (code[i] != code[code.length-1-i])
-                return Optional.of(Boolean.valueOf(code[i]));
-        return Optional.empty();
-    }
-
-    public static byte[] booleansToBytes(boolean[] booleans) {
-        byte[] bytes = new byte[(int) Math.ceil(booleans.length / 8.0)];
-        for (int i = 0; i < booleans.length; i++) {
-            if (booleans[i]) {
-                bytes[i / 8] |= (1 << (i % 8));
-            }
-        }
-        return bytes;
+        this.signature = PortalSignature.compute(baseSequence, topSequence, leftSequence, rightSequence);
+        this.crying = PortalSignature.hasCrying(baseSequence, topSequence, leftSequence, rightSequence);
     }
 
     public static Optional<CryingPortalShape> findEmptyPortalShape(LevelAccessor levelAccessor, BlockPos blockPos, Direction.Axis axis) {
-        CryingPortals.LOGGER.info("Checking Crying Portal");
-        return findPortalShape(levelAccessor, blockPos, (portalShape) -> portalShape.isValid() && portalShape.numPortalBlocks == 0, axis);
+        return findPortalShape(levelAccessor, blockPos, (portalShape) -> portalShape.isValid() && portalShape.isCrying() && portalShape.numPortalBlocks == 0, axis);
     }
 
     public static Optional<CryingPortalShape> findPortalShape(LevelAccessor levelAccessor, BlockPos blockPos, Predicate<CryingPortalShape> predicate, Direction.Axis axis) {
@@ -158,6 +97,11 @@ public class CryingPortalShape{
             Direction.Axis axis2 = axis == Axis.X ? Axis.Z : Axis.X;
             return Optional.of(findAnyShape(levelAccessor, blockPos, axis2)).filter(predicate);
         }
+    }
+
+    /** The complete, lit Crying Portal containing {@code blockPos} along {@code axis}, if any. */
+    public static Optional<CryingPortalShape> findCompleteShape(BlockGetter blockGetter, BlockPos blockPos, Direction.Axis axis) {
+        return Optional.of(findAnyShape(blockGetter, blockPos, axis)).filter(shape -> shape.isComplete() && shape.isCrying());
     }
 
     public static CryingPortalShape findAnyShape(BlockGetter blockGetter, BlockPos blockPos, Direction.Axis axis) {
@@ -188,13 +132,13 @@ public class CryingPortalShape{
 
     private static int calculateWidth(BlockGetter blockGetter, BlockPos blockPos, Direction direction) {
         int i = getDistanceUntilEdgeAboveFrame(blockGetter, blockPos, direction);
-        return i >= 2 && i <= PortalShape.MAX_WIDTH ? i : 0;
+        return i >= MIN_WIDTH && i <= PortalShape.MAX_WIDTH ? i : 0;
     }
 
     private static int getDistanceUntilEdgeAboveFrame(BlockGetter blockGetter, BlockPos blockPos, Direction direction) {
         BlockPos.MutableBlockPos mutableBlockPos = new BlockPos.MutableBlockPos();
 
-        for(int i = 0; i <= PortalShape.MAX_HEIGHT; ++i) {
+        for(int i = 0; i <= PortalShape.MAX_WIDTH; ++i) {
             mutableBlockPos.set(blockPos).move(direction, i);
             BlockState blockState = blockGetter.getBlockState(mutableBlockPos);
             if (!isEmpty(blockState)) {
@@ -249,25 +193,25 @@ public class CryingPortalShape{
                     return j;
                 }
 
-                if (blockState.is(Blocks.NETHER_PORTAL)) {
+                if (blockState.is(ModBlocks.CRYING_PORTAL)) {
                     mutableInt.increment();
                 }
             }
         }
 
-        return 21;
+        return PortalShape.MAX_HEIGHT;
     }
 
     private static boolean isEmpty(BlockState blockState) {
-        return blockState.isAir() || blockState.is(BlockTags.FIRE) || blockState.is(Blocks.NETHER_PORTAL);
+        return blockState.isAir() || blockState.is(BlockTags.FIRE) || blockState.is(ModBlocks.CRYING_PORTAL);
     }
 
     public boolean isValid() {
-        return this.width >= MIN_WIDTH && this.width <= PortalShape.MAX_HEIGHT && this.height >= MIN_HEIGHT && this.height <= PortalShape.MAX_HEIGHT;
+        return this.width >= MIN_WIDTH && this.width <= PortalShape.MAX_WIDTH && this.height >= MIN_HEIGHT && this.height <= PortalShape.MAX_HEIGHT;
     }
 
     public void createPortalBlocks(LevelAccessor levelAccessor) {
-        BlockState blockState = (BlockState) ModBlocks.CRYING_PORTAL.defaultBlockState().setValue(NetherPortalBlock.AXIS, this.axis);
+        BlockState blockState = ModBlocks.CRYING_PORTAL.defaultBlockState().setValue(NetherPortalBlock.AXIS, this.axis);
         BlockPos.betweenClosed(this.bottomLeft, this.bottomLeft.relative(Direction.UP, this.height - 1).relative(this.rightDir, this.width - 1)).forEach((blockPos) -> levelAccessor.setBlock(blockPos, blockState, 18));
     }
 
@@ -275,41 +219,61 @@ public class CryingPortalShape{
         return this.isValid() && this.numPortalBlocks == this.width * this.height;
     }
 
-    public static Vec3 getRelativePosition(BlockUtil.FoundRectangle foundRectangle, Direction.Axis axis, Vec3 vec3, EntityDimensions entityDimensions) {
-        double d = (double)foundRectangle.axis1Size - (double)entityDimensions.width();
-        double e = (double)foundRectangle.axis2Size - (double)entityDimensions.height();
-        BlockPos blockPos = foundRectangle.minCorner;
-        double g;
-        if (d > (double)0.0F) {
-            double f = (double)blockPos.get(axis) + (double)entityDimensions.width() / (double)2.0F;
-            g = Mth.clamp(Mth.inverseLerp(vec3.get(axis) - f, (double)0.0F, d), (double)0.0F, (double)1.0F);
-        } else {
-            g = (double)0.5F;
-        }
-
-        double f;
-        if (e > (double)0.0F) {
-            Direction.Axis axis2 = Axis.Y;
-            f = Mth.clamp(Mth.inverseLerp(vec3.get(axis2) - (double)blockPos.get(axis2), (double)0.0F, e), (double)0.0F, (double)1.0F);
-        } else {
-            f = (double)0.0F;
-        }
-
-        Direction.Axis axis2 = axis == Axis.X ? Axis.Z : Axis.X;
-        double h = vec3.get(axis2) - ((double)blockPos.get(axis2) + (double)0.5F);
-        return new Vec3(g, f, h);
+    /** True when at least one signature block (corners excluded) is Crying Obsidian. */
+    public boolean isCrying() {
+        return this.crying;
     }
 
-    public static Vec3 findCollisionFreePosition(Vec3 vec3, ServerLevel serverLevel, Entity entity, EntityDimensions entityDimensions) {
-        if (!(entityDimensions.width() > 4.0F) && !(entityDimensions.height() > 4.0F)) {
-            double d = (double)entityDimensions.height() / (double)2.0F;
-            Vec3 vec32 = vec3.add((double)0.0F, d, (double)0.0F);
-            VoxelShape voxelShape = Shapes.create(AABB.ofSize(vec32, (double)entityDimensions.width(), (double)0.0F, (double)entityDimensions.width()).expandTowards((double)0.0F, (double)1.0F, (double)0.0F).inflate(1.0E-6));
-            Optional<Vec3> optional = serverLevel.findFreePosition(entity, voxelShape, vec32, (double)entityDimensions.width(), (double)entityDimensions.height(), (double)entityDimensions.width());
-            Optional<Vec3> optional2 = optional.map((vec3x) -> vec3x.subtract((double)0.0F, d, (double)0.0F));
-            return (Vec3)optional2.orElse(vec3);
+    public @Nullable String getSignature() {
+        return this.signature;
+    }
+
+    public BlockPos getBottomLeft() {
+        return this.bottomLeft;
+    }
+
+    public Direction.Axis getAxis() {
+        return this.axis;
+    }
+
+    public int getWidth() {
+        return this.width;
+    }
+
+    public int getHeight() {
+        return this.height;
+    }
+
+    /**
+     * Port of vanilla's private {@code NetherPortalBlock.getDimensionTransitionFromExit}: keeps the entity's
+     * relative position inside the source portal and maps it onto the destination portal.
+     */
+    public static TeleportTransition createTransition(Entity entity, BlockPos sourcePos, ServerLevel targetLevel, BlockPos targetPos, TeleportTransition.PostTeleportTransition postTeleportTransition) {
+        BlockState sourceState = entity.level().getBlockState(sourcePos);
+        Direction.Axis sourceAxis;
+        Vec3 relative;
+        if (sourceState.hasProperty(BlockStateProperties.HORIZONTAL_AXIS)) {
+            sourceAxis = sourceState.getValue(BlockStateProperties.HORIZONTAL_AXIS);
+            BlockUtil.FoundRectangle sourceRect = BlockUtil.getLargestRectangleAround(sourcePos, sourceAxis, PortalShape.MAX_WIDTH, Axis.Y, PortalShape.MAX_HEIGHT, pos -> entity.level().getBlockState(pos) == sourceState);
+            relative = entity.getRelativePortalPosition(sourceAxis, sourceRect);
         } else {
-            return vec3;
+            sourceAxis = Axis.X;
+            relative = new Vec3(0.5, 0.0, 0.0);
         }
+
+        BlockState targetState = targetLevel.getBlockState(targetPos);
+        Direction.Axis targetAxis = targetState.getOptionalValue(BlockStateProperties.HORIZONTAL_AXIS).orElse(Axis.X);
+        BlockUtil.FoundRectangle targetRect = BlockUtil.getLargestRectangleAround(targetPos, targetAxis, PortalShape.MAX_WIDTH, Axis.Y, PortalShape.MAX_HEIGHT, pos -> targetLevel.getBlockState(pos) == targetState);
+
+        BlockPos minCorner = targetRect.minCorner;
+        EntityDimensions dimensions = entity.getDimensions(entity.getPose());
+        int yRot = sourceAxis == targetAxis ? 0 : 90;
+        double along = dimensions.width() / 2.0 + (targetRect.axis1Size - dimensions.width()) * relative.x();
+        double up = (targetRect.axis2Size - dimensions.height()) * relative.y();
+        double across = 0.5 + relative.z();
+        boolean alongX = targetAxis == Axis.X;
+        Vec3 position = new Vec3(minCorner.getX() + (alongX ? along : across), minCorner.getY() + up, minCorner.getZ() + (alongX ? across : along));
+        Vec3 freePosition = PortalShape.findCollisionFreePosition(position, targetLevel, entity, dimensions);
+        return new TeleportTransition(targetLevel, freePosition, Vec3.ZERO, yRot, 0.0F, Relative.union(Relative.DELTA, Relative.ROTATION), postTeleportTransition);
     }
 }
